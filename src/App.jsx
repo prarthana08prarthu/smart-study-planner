@@ -103,6 +103,26 @@ const getDifficultyScore = (difficulty) => {
   return 0.35;
 };
 
+const getDifficultyLabel = (difficulty) => {
+  if (
+    difficulty === "Hard" ||
+    difficulty === 1 ||
+    difficulty === "1"
+  ) {
+    return "Hard";
+  }
+
+  if (
+    difficulty === "Medium" ||
+    difficulty === 0.65 ||
+    difficulty === "0.65"
+  ) {
+    return "Medium";
+  }
+
+  return "Easy";
+};
+
 const formatTime = (seconds) => {
   const safeSeconds = Math.max(0, seconds);
   const minutes = Math.floor(safeSeconds / 60);
@@ -136,7 +156,6 @@ const calculateDaysRemaining = (examDate) => {
 
   const today = new Date();
   const exam = new Date(`${examDate}T23:59:59`);
-
   const difference = exam.getTime() - today.getTime();
 
   return Math.max(
@@ -175,22 +194,6 @@ const getUrgencyScore = (daysRemaining) => {
   }
 
   return 0.15;
-};
-
-const getUrgencyLabel = (daysRemaining) => {
-  if (daysRemaining <= 1) {
-    return "Critical";
-  }
-
-  if (daysRemaining <= 3) {
-    return "High";
-  }
-
-  if (daysRemaining <= 7) {
-    return "Medium";
-  }
-
-  return "Low";
 };
 
 const getScoreLabel = (score) => {
@@ -242,14 +245,13 @@ const normalizeDifficulty = (difficulty) => {
 
 const normalizeSubject = (subject) => ({
   ...subject,
-  difficulty: normalizeDifficulty(
-    subject.difficulty
-  ),
+  difficulty: normalizeDifficulty(subject.difficulty),
   topics: Array.isArray(subject.topics)
     ? subject.topics
     : [],
 });
-function App() { console.log("SMART PLANNER APP STARTED");
+
+function App() {
   const [subjects, setSubjects] = useState(() => {
     const storedSubjects = getStoredValue(
       STORAGE_KEYS.subjects,
@@ -260,22 +262,20 @@ function App() { console.log("SMART PLANNER APP STARTED");
       return DEFAULT_SUBJECTS;
     }
 
-    return storedSubjects.map(
-      normalizeSubject
-    );
+    return storedSubjects.map(normalizeSubject);
   });
 
   const [studyHours, setStudyHours] = useState(() =>
     getStoredValue(STORAGE_KEYS.studyHours, 3)
   );
 
-  const [completedTopics, setCompletedTopics] = useState(
-    () =>
+  const [completedTopics, setCompletedTopics] =
+    useState(() =>
       getStoredValue(
         STORAGE_KEYS.completedTopics,
         {}
       )
-  );
+    );
 
   const [completedSessions, setCompletedSessions] =
     useState(() =>
@@ -370,9 +370,7 @@ function App() { console.log("SMART PLANNER APP STARTED");
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.subjectStudiedSeconds,
-      JSON.stringify(
-        subjectStudiedSeconds
-      )
+      JSON.stringify(subjectStudiedSeconds)
     );
   }, [subjectStudiedSeconds]);
 
@@ -497,15 +495,6 @@ function App() { console.log("SMART PLANNER APP STARTED");
 
         const progressAdjustment =
           1 - progress;
-
-        /*
-          Explainable scoring model:
-
-          Exam urgency      = 50%
-          Difficulty        = 25%
-          Remaining topics  = 20%
-          Progress          = 5%
-        */
 
         const urgencyPoints =
           urgency * 50;
@@ -816,7 +805,9 @@ function App() { console.log("SMART PLANNER APP STARTED");
     setForm({
       name: subject.name,
       examDate: subject.examDate,
-      difficulty: subject.difficulty,
+      difficulty: getDifficultyLabel(
+        subject.difficulty
+      ),
       topics: subject.topics.join(
         ", "
       ),
@@ -1158,7 +1149,9 @@ function App() { console.log("SMART PLANNER APP STARTED");
                     <span>
                       {subject.name}
                       <small>
-                        {subject.difficulty}
+                        {getDifficultyLabel(
+                          subject.difficulty
+                        )}
                       </small>
                     </span>
 
@@ -1424,9 +1417,13 @@ function App() { console.log("SMART PLANNER APP STARTED");
                   </div>
 
                   <span
-                    className={`difficulty ${String(subject.difficulty).toLowerCase()}`}
+                    className={`difficulty ${String(
+                      subject.difficulty
+                    ).toLowerCase()}`}
                   >
-                    {subject.difficulty}
+                    {getDifficultyLabel(
+                      subject.difficulty
+                    )}
                   </span>
 
                   <div className="subject-progress">
@@ -1519,13 +1516,13 @@ function App() { console.log("SMART PLANNER APP STARTED");
                       {recommendation.subject
                         .daysRemaining !== 1
                         ? "s"
-                        : ""}
-                      , it is a{" "}
+                        : ""},{" "}
+                      it is a{" "}
                       <strong>
-                        {
+                        {getDifficultyLabel(
                           recommendation.subject
                             .difficulty
-                        }
+                        )}
                       </strong>{" "}
                       subject, and you still
                       have{" "}
@@ -1575,10 +1572,10 @@ function App() { console.log("SMART PLANNER APP STARTED");
 
                     <span>
                       🎯{" "}
-                      {
+                      {getDifficultyLabel(
                         recommendation.subject
                           .difficulty
-                      }{" "}
+                      )}{" "}
                       difficulty
                     </span>
 
@@ -1692,12 +1689,10 @@ function App() { console.log("SMART PLANNER APP STARTED");
                     </h3>
 
                     <p>
-                      {item.subject.name} �{" "}
-                      {item.subject.difficulty >= 0.85
-                        ? "Hard"
-                        : item.subject.difficulty >= 0.5
-                        ? "Medium"
-                        : "Easy"}
+                      {item.subject.name} •{" "}
+                      {getDifficultyLabel(
+                        item.subject.difficulty
+                      )}
                     </p>
 
                     <strong>
@@ -1775,12 +1770,11 @@ function App() { console.log("SMART PLANNER APP STARTED");
                           1
                             ? "s"
                             : ""}{" "}
-                          �{" "}
-                          {subject.difficulty >= 0.85
-                            ? "Hard"
-                            : subject.difficulty >= 0.5
-                            ? "Medium"
-                            : "Easy"} �{" "}
+                          •{" "}
+                          {getDifficultyLabel(
+                            subject.difficulty
+                          )}{" "}
+                          •{" "}
                           {
                             subject.remainingTopics
                           }{" "}
@@ -1866,8 +1860,10 @@ function App() { console.log("SMART PLANNER APP STARTED");
                         ? "The exam is approaching quickly. "
                         : ""}
                       The subject is{" "}
-                      {String(subject.difficulty).toLowerCase()}
-                      , has{" "}
+                      {getDifficultyLabel(
+                        subject.difficulty
+                      )}{" "}
+                      and has{" "}
                       {subject.remainingTopics}{" "}
                       unfinished topics and is{" "}
                       {Math.round(
@@ -1971,7 +1967,7 @@ function App() { console.log("SMART PLANNER APP STARTED");
                           >
                             {isComplete
                               ? "✅"
-                              : "⬜"}
+                              : "⬜"}{" "}
                             {topic}
                           </button>
                         );
@@ -2006,49 +2002,46 @@ function App() { console.log("SMART PLANNER APP STARTED");
               {formatTime(timerSeconds)}
             </div>
 
-           ```jsx
-<div className="timer-actions">
-  {!isTimerRunning ? (
-    <button
-      className="primary-button"
-      onClick={() => {
-        if (timerSessionStarted.current) {
-          resumeTimer();
-          return;
-        }
+            <div className="timer-actions">
+              {!isTimerRunning ? (
+                <button
+                  className="primary-button"
+                  onClick={() => {
+                    if (timerSessionStarted.current) {
+                      resumeTimer();
+                      return;
+                    }
 
-        if (recommendation) {
-          startTopic(
-            recommendation.subject,
-            recommendation.topic,
-            recommendation.recommendedMinutes
-          );
-        }
-      }}
-    >
-      ▶{" "}
-      {timerSessionStarted.current
-        ? "Resume"
-        : "Start"}
-    </button>
-  ) : (
-    <button
-      className="secondary-button"
-      onClick={pauseTimer}
-    >
-      ⏸ Pause
-    </button>
-  )}
+                    if (recommendation) {
+                      startTopic(
+                        recommendation.subject,
+                        recommendation.topic,
+                        recommendation.recommendedMinutes
+                      );
+                    }
+                  }}
+                >
+                  ▶{" "}
+                  {timerSessionStarted.current
+                    ? "Resume"
+                    : "Start"}
+                </button>
+              ) : (
+                <button
+                  className="secondary-button"
+                  onClick={pauseTimer}
+                >
+                  ⏸ Pause
+                </button>
+              )}
 
-  <button
-    className="secondary-button"
-    onClick={resetTimer}
-  >
-    ↻ Reset
-  </button>
-</div>
-```
-
+              <button
+                className="secondary-button"
+                onClick={resetTimer}
+              >
+                ↻ Reset
+              </button>
+            </div>
 
             <p className="timer-note">
               ✓ Session completes automatically
@@ -2173,8 +2166,3 @@ function App() { console.log("SMART PLANNER APP STARTED");
 }
 
 export default App;
-
-
-
-
-
