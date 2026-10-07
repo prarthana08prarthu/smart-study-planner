@@ -13,8 +13,7 @@ const STORAGE_KEYS = {
   completedSessions: "completedSessions",
   studiedSeconds: "studiedSeconds",
   studyDates: "studyDates",
-  subjectStudiedSeconds:
-    "subjectStudiedSeconds",
+  subjectStudiedSeconds: "subjectStudiedSeconds",
 };
 
 const DEFAULT_SUBJECTS = [
@@ -68,19 +67,8 @@ const DEFAULT_SUBJECTS = [
   },
 ];
 
-const getTodayKey = () => {
-  const today = new Date();
-
-  const year = today.getFullYear();
-  const month = String(
-    today.getMonth() + 1
-  ).padStart(2, "0");
-  const day = String(
-    today.getDate()
-  ).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-};
+const getTodayKey = () =>
+  new Date().toISOString().slice(0, 10);
 
 const getInitialForm = () => ({
   name: "",
@@ -91,91 +79,203 @@ const getInitialForm = () => ({
 
 const getStoredValue = (key, fallback) => {
   try {
-    const value =
-      localStorage.getItem(key);
+    const saved = localStorage.getItem(key);
 
-    if (value === null) {
+    if (saved === null) {
       return fallback;
     }
 
-    return JSON.parse(value);
+    return JSON.parse(saved);
   } catch {
     return fallback;
   }
 };
 
-const getDifficultyScore = (
-  difficulty
-) => {
-  if (difficulty === "Hard") return 30;
-  if (difficulty === "Medium") return 20;
-  return 10;
+const getDifficultyScore = (difficulty) => {
+  if (difficulty === "Hard") {
+    return 1;
+  }
+
+  if (difficulty === "Medium") {
+    return 0.65;
+  }
+
+  return 0.35;
 };
 
 const formatTime = (seconds) => {
-  const minutes = Math.floor(
-    seconds / 60
-  );
+  const safeSeconds = Math.max(0, seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
 
-  const remainingSeconds =
-    seconds % 60;
-
-  return `${String(minutes).padStart(
-    2,
-    "0"
-  )}:${String(
+  return `${String(minutes).padStart(2, "0")}:${String(
     remainingSeconds
   ).padStart(2, "0")}`;
 };
 
-const calculateDaysRemaining = (
-  examDate
-) => {
+const formatStudyDuration = (seconds) => {
+  const safeSeconds = Math.max(0, seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+
+  if (minutes === 0) {
+    return `${remainingSeconds} sec`;
+  }
+
+  if (remainingSeconds === 0) {
+    return `${minutes} min`;
+  }
+
+  return `${minutes} min ${remainingSeconds} sec`;
+};
+
+const calculateDaysRemaining = (examDate) => {
+  if (!examDate) {
+    return 999;
+  }
+
   const today = new Date();
+  const exam = new Date(`${examDate}T23:59:59`);
 
-  const exam = new Date(
-    `${examDate}T00:00:00`
-  );
-
-  today.setHours(0, 0, 0, 0);
-
-  const difference =
-    exam.getTime() -
-    today.getTime();
+  const difference = exam.getTime() - today.getTime();
 
   return Math.max(
     0,
-    Math.ceil(
-      difference /
-        (1000 * 60 * 60 * 24)
-    )
+    Math.ceil(difference / (1000 * 60 * 60 * 24))
   );
 };
 
-function App() {
-  const [subjects, setSubjects] =
-    useState(() =>
-      getStoredValue(
-        STORAGE_KEYS.subjects,
-        DEFAULT_SUBJECTS
-      )
+const getUrgencyScore = (daysRemaining) => {
+  if (daysRemaining <= 0) {
+    return 1;
+  }
+
+  if (daysRemaining === 1) {
+    return 1;
+  }
+
+  if (daysRemaining === 2) {
+    return 0.9;
+  }
+
+  if (daysRemaining === 3) {
+    return 0.78;
+  }
+
+  if (daysRemaining <= 5) {
+    return 0.65;
+  }
+
+  if (daysRemaining <= 7) {
+    return 0.5;
+  }
+
+  if (daysRemaining <= 14) {
+    return 0.3;
+  }
+
+  return 0.15;
+};
+
+const getUrgencyLabel = (daysRemaining) => {
+  if (daysRemaining <= 1) {
+    return "Critical";
+  }
+
+  if (daysRemaining <= 3) {
+    return "High";
+  }
+
+  if (daysRemaining <= 7) {
+    return "Medium";
+  }
+
+  return "Low";
+};
+
+const getScoreLabel = (score) => {
+  if (score >= 85) {
+    return "Critical priority";
+  }
+
+  if (score >= 65) {
+    return "High priority";
+  }
+
+  if (score >= 45) {
+    return "Medium priority";
+  }
+
+  return "Low priority";
+};
+
+const clamp = (value, min, max) =>
+  Math.min(max, Math.max(min, value));
+
+const normalizeDifficulty = (difficulty) => {
+  if (
+    difficulty === "Hard" ||
+    difficulty === 1 ||
+    difficulty === "1"
+  ) {
+    return "Hard";
+  }
+
+  if (
+    difficulty === "Medium" ||
+    difficulty === 0.65 ||
+    difficulty === "0.65"
+  ) {
+    return "Medium";
+  }
+
+  if (
+    difficulty === "Easy" ||
+    difficulty === 0.35 ||
+    difficulty === "0.35"
+  ) {
+    return "Easy";
+  }
+
+  return "Medium";
+};
+
+const normalizeSubject = (subject) => ({
+  ...subject,
+  difficulty: normalizeDifficulty(
+    subject.difficulty
+  ),
+  topics: Array.isArray(subject.topics)
+    ? subject.topics
+    : [],
+});
+function App() { console.log("SMART PLANNER APP STARTED");
+  const [subjects, setSubjects] = useState(() => {
+    const storedSubjects = getStoredValue(
+      STORAGE_KEYS.subjects,
+      null
     );
 
-  const [studyHours, setStudyHours] =
-    useState(() =>
-      getStoredValue(
-        STORAGE_KEYS.studyHours,
-        3
-      )
-    );
+    if (!Array.isArray(storedSubjects)) {
+      return DEFAULT_SUBJECTS;
+    }
 
-  const [completedTopics, setCompletedTopics] =
-    useState(() =>
+    return storedSubjects.map(
+      normalizeSubject
+    );
+  });
+
+  const [studyHours, setStudyHours] = useState(() =>
+    getStoredValue(STORAGE_KEYS.studyHours, 3)
+  );
+
+  const [completedTopics, setCompletedTopics] = useState(
+    () =>
       getStoredValue(
         STORAGE_KEYS.completedTopics,
         {}
       )
-    );
+  );
 
   const [completedSessions, setCompletedSessions] =
     useState(() =>
@@ -193,26 +293,17 @@ function App() {
       )
     );
 
-  const [studyDates, setStudyDates] =
-    useState(() =>
-      getStoredValue(
-        STORAGE_KEYS.studyDates,
-        []
-      )
-    );
-
-  const [
-    subjectStudiedSeconds,
-    setSubjectStudiedSeconds,
-  ] = useState(() =>
-    getStoredValue(
-      STORAGE_KEYS.subjectStudiedSeconds,
-      {}
-    )
+  const [studyDates, setStudyDates] = useState(() =>
+    getStoredValue(STORAGE_KEYS.studyDates, [])
   );
 
-  const [selectedTopic, setSelectedTopic] =
-    useState(null);
+  const [subjectStudiedSeconds, setSubjectStudiedSeconds] =
+    useState(() =>
+      getStoredValue(
+        STORAGE_KEYS.subjectStudiedSeconds,
+        {}
+      )
+    );
 
   const [timerSeconds, setTimerSeconds] =
     useState(25 * 60);
@@ -220,27 +311,19 @@ function App() {
   const [isTimerRunning, setIsTimerRunning] =
     useState(false);
 
-  /*
-    Stores the topic key for the currently
-    active 25-minute session.
+  const [selectedTopic, setSelectedTopic] =
+    useState(null);
 
-    Example:
-    coa-Functional Units
-  */
-  const activeSessionRef = useRef(null);
-
-  const [showSubjectForm, setShowSubjectForm] =
-    useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const [editingSubjectId, setEditingSubjectId] =
     useState(null);
 
-  const [subjectForm, setSubjectForm] =
-    useState(getInitialForm());
+  const [form, setForm] = useState(
+    getInitialForm()
+  );
 
-  /* --------------------------------------------------
-     LOCAL STORAGE
-  -------------------------------------------------- */
+  const timerSessionStarted = useRef(false);
 
   useEffect(() => {
     localStorage.setItem(
@@ -259,27 +342,21 @@ function App() {
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.completedTopics,
-      JSON.stringify(
-        completedTopics
-      )
+      JSON.stringify(completedTopics)
     );
   }, [completedTopics]);
 
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.completedSessions,
-      JSON.stringify(
-        completedSessions
-      )
+      JSON.stringify(completedSessions)
     );
   }, [completedSessions]);
 
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.studiedSeconds,
-      JSON.stringify(
-        studiedSeconds
-      )
+      JSON.stringify(studiedSeconds)
     );
   }, [studiedSeconds]);
 
@@ -297,207 +374,292 @@ function App() {
         subjectStudiedSeconds
       )
     );
-  }, [
-    subjectStudiedSeconds,
-  ]);
+  }, [subjectStudiedSeconds]);
 
-  /* --------------------------------------------------
-     BASIC CALCULATIONS
-  -------------------------------------------------- */
+  const totalTopics = useMemo(
+    () =>
+      subjects.reduce(
+        (total, subject) =>
+          total + subject.topics.length,
+        0
+      ),
+    [subjects]
+  );
 
-  const totalTopics = useMemo(() => {
-    return subjects.reduce(
-      (total, subject) =>
-        total +
-        subject.topics.length,
-      0
-    );
-  }, [subjects]);
+  const completedTopicCount = useMemo(
+    () =>
+      Object.values(completedTopics).filter(Boolean)
+        .length,
+    [completedTopics]
+  );
 
-  const completedTopicCount =
-    useMemo(() => {
-      return Object.values(
-        completedTopics
-      ).filter(Boolean).length;
-    }, [completedTopics]);
-
-  const overallProgress =
-    totalTopics > 0
-      ? Math.round(
-          (completedTopicCount /
-            totalTopics) *
+  const topicProgress =
+    totalTopics === 0
+      ? 0
+      : Math.round(
+          (completedTopicCount / totalTopics) *
             100
-        )
-      : 0;
+        );
 
   const dailyGoalMinutes =
-    studyHours * 60;
+    Number(studyHours) * 60;
 
-  const studiedMinutes =
-    Math.floor(
-      studiedSeconds / 60
-    );
+  const studiedMinutes = Math.floor(
+    studiedSeconds / 60
+  );
 
   const dailyGoalProgress =
-    dailyGoalMinutes > 0
-      ? Math.min(
-          100,
+    dailyGoalMinutes === 0
+      ? 0
+      : clamp(
           Math.round(
             (studiedMinutes /
               dailyGoalMinutes) *
               100
-          )
-        )
-      : 0;
+          ),
+          0,
+          100
+        );
 
-  const remainingMinutes =
-    Math.max(
-      0,
-      dailyGoalMinutes -
-        studiedMinutes
-    );
+  const remainingMinutes = Math.max(
+    0,
+    dailyGoalMinutes - studiedMinutes
+  );
 
-  /* --------------------------------------------------
-     STREAK
-  -------------------------------------------------- */
+  const currentStreak = useMemo(() => {
+    if (studyDates.length === 0) {
+      return 0;
+    }
 
-  const currentStreak =
-    useMemo(() => {
-      if (!studyDates.length) {
-        return 0;
+    const dates = new Set(studyDates);
+
+    let streak = 0;
+    const cursor = new Date();
+
+    while (true) {
+      const key = cursor
+        .toISOString()
+        .slice(0, 10);
+
+      if (!dates.has(key)) {
+        break;
       }
 
-      const dates = new Set(
-        studyDates
-      );
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
 
-      let streak = 0;
+    return streak;
+  }, [studyDates]);
 
-      const current = new Date();
+  const rankedSubjects = useMemo(() => {
+    return subjects
+      .map((subject) => {
+        const completed = subject.topics.filter(
+          (topic) =>
+            completedTopics[
+              `${subject.id}-${topic}`
+            ]
+        ).length;
 
-      while (true) {
-        const year =
-          current.getFullYear();
+        const remainingTopics =
+          subject.topics.length -
+          completed;
 
-        const month = String(
-          current.getMonth() + 1
-        ).padStart(2, "0");
+        const progress =
+          subject.topics.length === 0
+            ? 0
+            : completed /
+              subject.topics.length;
 
-        const day = String(
-          current.getDate()
-        ).padStart(2, "0");
+        const daysRemaining =
+          calculateDaysRemaining(
+            subject.examDate
+          );
 
-        const key = `${year}-${month}-${day}`;
+        const urgency =
+          getUrgencyScore(daysRemaining);
 
-        if (!dates.has(key)) {
-          break;
+        const difficulty =
+          getDifficultyScore(
+            subject.difficulty
+          );
+
+        const topicNeed =
+          subject.topics.length === 0
+            ? 0
+            : clamp(
+                remainingTopics /
+                  subject.topics.length,
+                0,
+                1
+              );
+
+        const progressAdjustment =
+          1 - progress;
+
+        /*
+          Explainable scoring model:
+
+          Exam urgency      = 50%
+          Difficulty        = 25%
+          Remaining topics  = 20%
+          Progress          = 5%
+        */
+
+        const urgencyPoints =
+          urgency * 50;
+
+        const difficultyPoints =
+          difficulty * 25;
+
+        const remainingTopicPoints =
+          topicNeed * 20;
+
+        const progressPoints =
+          progressAdjustment * 5;
+
+        const rawScore =
+          urgencyPoints +
+          difficultyPoints +
+          remainingTopicPoints +
+          progressPoints;
+
+        const score = Math.round(
+          clamp(rawScore, 0, 100)
+        );
+
+        return {
+          ...subject,
+          completed,
+          remainingTopics,
+          progress,
+          daysRemaining,
+          urgency,
+          difficulty,
+          topicNeed,
+          progressAdjustment,
+          urgencyPoints,
+          difficultyPoints,
+          remainingTopicPoints,
+          progressPoints,
+          score,
+        };
+      })
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
         }
 
-        streak += 1;
-
-        current.setDate(
-          current.getDate() - 1
+        return (
+          a.daysRemaining -
+          b.daysRemaining
         );
-      }
+      });
+  }, [subjects, completedTopics]);
 
-      return streak;
-    }, [studyDates]);
+  const highestPrioritySubject =
+    rankedSubjects[0] || null;
 
-  /* --------------------------------------------------
-     SMART PRIORITY
-  -------------------------------------------------- */
+  const recommendation = useMemo(() => {
+    if (!highestPrioritySubject) {
+      return null;
+    }
 
-  const rankedSubjects =
-    useMemo(() => {
-      return subjects
-        .map((subject) => {
-          const completedCount =
-            subject.topics.filter(
-              (topic) =>
-                completedTopics[
-                  `${subject.id}-${topic}`
-                ]
-            ).length;
+    const subject =
+      highestPrioritySubject;
 
-          const remainingTopics =
-            subject.topics.length -
-            completedCount;
+    const firstIncompleteTopic =
+      subject.topics.find(
+        (topic) =>
+          !completedTopics[
+            `${subject.id}-${topic}`
+          ]
+      );
 
-          const daysRemaining =
-            calculateDaysRemaining(
-              subject.examDate
-            );
+    if (!firstIncompleteTopic) {
+      return null;
+    }
 
-          const urgencyScore =
-            daysRemaining === 0
-              ? 40
-              : Math.min(
-                  40,
-                  40 /
-                    Math.max(
-                      daysRemaining,
-                      1
-                    )
-                );
+    let recommendedMinutes = 25;
 
-          const difficultyScore =
-            getDifficultyScore(
-              subject.difficulty
-            );
+    if (subject.score >= 85) {
+      recommendedMinutes = 25;
+    } else if (subject.score >= 65) {
+      recommendedMinutes = 30;
+    } else {
+      recommendedMinutes = 35;
+    }
 
-          const topicLoadScore =
-            subject.topics.length > 0
-              ? (remainingTopics /
-                  subject.topics
-                    .length) *
-                20
-              : 0;
+    if (remainingMinutes < 25) {
+      recommendedMinutes = Math.max(
+        5,
+        remainingMinutes
+      );
+    }
 
-          const progressScore =
-            subject.topics.length > 0
-              ? (1 -
-                  completedCount /
-                    subject.topics
-                      .length) *
-                10
-              : 0;
+    return {
+      subject,
+      topic: firstIncompleteTopic,
+      recommendedMinutes,
+    };
+  }, [
+    highestPrioritySubject,
+    completedTopics,
+    remainingMinutes,
+  ]);
 
-          const priority =
-            Math.min(
-              100,
-              Math.round(
-                urgencyScore +
-                  difficultyScore +
-                  topicLoadScore +
-                  progressScore
-              )
-            );
+  const recoveryPlan = useMemo(() => {
+    if (
+      remainingMinutes <= 0 ||
+      rankedSubjects.length === 0
+    ) {
+      return [];
+    }
 
-          return {
-            ...subject,
-            completedCount,
-            remainingTopics,
-            daysRemaining,
-            priority,
-          };
-        })
-        .sort(
-          (a, b) =>
-            b.priority -
-            a.priority
-        );
-    }, [
-      subjects,
-      completedTopics,
-    ]);
+    const activeSubjects =
+      rankedSubjects.filter(
+        (subject) =>
+          subject.remainingTopics > 0
+      );
 
-  /* --------------------------------------------------
-     ADAPTIVE RECOMMENDATION
-  -------------------------------------------------- */
+    if (activeSubjects.length === 0) {
+      return [];
+    }
 
-  const recommendation =
-    useMemo(() => {
-      for (const subject of rankedSubjects) {
+    const totalScore =
+      activeSubjects.reduce(
+        (sum, subject) =>
+          sum + subject.score,
+        0
+      );
+
+    let allocated = 0;
+
+    return activeSubjects
+      .map((subject, index) => {
+        let minutes;
+
+        if (
+          index ===
+          activeSubjects.length - 1
+        ) {
+          minutes =
+            remainingMinutes -
+            allocated;
+        } else {
+          minutes = Math.max(
+            10,
+            Math.round(
+              (remainingMinutes *
+                subject.score) /
+                totalScore
+            )
+          );
+        }
+
+        allocated += minutes;
+
         const topic =
           subject.topics.find(
             (item) =>
@@ -506,139 +668,77 @@ function App() {
               ]
           );
 
-        if (topic) {
-          return {
-            subject,
-            topic,
-          };
-        }
-      }
-
-      return null;
-    }, [
-      rankedSubjects,
-      completedTopics,
-    ]);
-
-  /* --------------------------------------------------
-     ADAPTIVE RECOVERY PLAN
-  -------------------------------------------------- */
-
-  const recoveryPlan =
-    useMemo(() => {
-      if (!rankedSubjects.length) {
-        return [];
-      }
-
-      const availableMinutes =
-        remainingMinutes;
-
-      if (availableMinutes <= 0) {
-        return [];
-      }
-
-      const subjectsWithTopics =
-        rankedSubjects
-          .filter(
-            (subject) =>
-              subject.remainingTopics >
-              0
-          )
-          .slice(0, 3);
-
-      if (
-        !subjectsWithTopics.length
-      ) {
-        return [];
-      }
-
-      const totalPriority =
-        subjectsWithTopics.reduce(
-          (sum, subject) =>
-            sum + subject.priority,
-          0
-        );
-
-      let allocated = 0;
-
-      return subjectsWithTopics.map(
-        (subject, index) => {
-          let minutes;
-
-          if (
-            index ===
-            subjectsWithTopics.length -
-              1
-          ) {
-            minutes =
-              availableMinutes -
-              allocated;
-          } else {
-            minutes = Math.round(
-              (availableMinutes *
-                subject.priority) /
-                totalPriority
-            );
-
-            minutes = Math.max(
-              15,
-              minutes
-            );
-          }
-
-          allocated += minutes;
-
-          const topic =
-            subject.topics.find(
-              (item) =>
-                !completedTopics[
-                  `${subject.id}-${item}`
-                ]
-            );
-
-          return {
-            subject,
-            topic,
-            minutes,
-          };
-        }
+        return {
+          subject,
+          topic,
+          minutes,
+        };
+      })
+      .filter(
+        (item) => item.minutes > 0
       );
-    }, [
-      rankedSubjects,
-      remainingMinutes,
-      completedTopics,
-    ]);
+  }, [
+    remainingMinutes,
+    rankedSubjects,
+    completedTopics,
+  ]);
 
-  /* --------------------------------------------------
-     TIMER
-  -------------------------------------------------- */
+  const startTopic = (
+    subject,
+    topic,
+    minutes = 25
+  ) => {
+    setSelectedTopic({
+      subjectId: subject.id,
+      subjectName: subject.name,
+      topic,
+    });
+
+    setTimerSeconds(
+      Math.max(1, minutes) * 60
+    );
+
+    setIsTimerRunning(true);
+    timerSessionStarted.current = true;
+  };
+
+  const pauseTimer = () => {
+    setIsTimerRunning(false);
+  };
+
+  const resumeTimer = () => {
+    if (timerSeconds > 0) {
+      setIsTimerRunning(true);
+    }
+  };
+
+  const resetTimer = () => {
+    setIsTimerRunning(false);
+    setTimerSeconds(25 * 60);
+    setSelectedTopic(null);
+    timerSessionStarted.current = false;
+  };
 
   useEffect(() => {
     if (!isTimerRunning) {
-      return;
+      return undefined;
     }
 
     const interval = setInterval(() => {
       setTimerSeconds((previous) => {
         if (previous <= 1) {
+          setIsTimerRunning(false);
           return 0;
         }
 
         return previous - 1;
       });
 
-      /*
-        Count ONLY actual running time.
-      */
       setStudiedSeconds(
         (previous) =>
           previous + 1
       );
 
-      /*
-        Attribute actual study time
-        to the selected subject.
-      */
       if (selectedTopic) {
         setSubjectStudiedSeconds(
           (previous) => ({
@@ -650,14 +750,28 @@ function App() {
           })
         );
       }
+    }, 1000);
 
-      /*
-        Record today's study date.
-      */
+    return () =>
+      clearInterval(interval);
+  }, [
+    isTimerRunning,
+    selectedTopic,
+  ]);
+
+  useEffect(() => {
+    if (
+      timerSeconds === 0 &&
+      timerSessionStarted.current
+    ) {
+      setCompletedSessions(
+        (previous) => previous + 1
+      );
+
+      const today =
+        getTodayKey();
+
       setStudyDates((previous) => {
-        const today =
-          getTodayKey();
-
         if (
           previous.includes(today)
         ) {
@@ -669,304 +783,106 @@ function App() {
           today,
         ];
       });
-    }, 1000);
 
-    return () =>
-      clearInterval(interval);
-  }, [
-    isTimerRunning,
-    selectedTopic,
-  ]);
-
-  /* --------------------------------------------------
-     AUTOMATIC SESSION COMPLETION
-  -------------------------------------------------- */
-
-  useEffect(() => {
-    if (
-      timerSeconds !== 0 ||
-      !activeSessionRef.current
-    ) {
-      return;
+      timerSessionStarted.current = false;
     }
+  }, [timerSeconds]);
 
-    const sessionKey =
-      activeSessionRef.current;
+  const toggleTopic = (
+    subjectId,
+    topic
+  ) => {
+    const key = `${subjectId}-${topic}`;
 
-    /*
-      Clear the ref immediately so
-      this session can never be counted twice.
-    */
-    activeSessionRef.current = null;
-
-    setIsTimerRunning(false);
-
-    /*
-      Count exactly ONE completed session.
-    */
-    setCompletedSessions(
-      (previous) =>
-        previous + 1
-    );
-
-    /*
-      Mark the topic completed.
-    */
     setCompletedTopics(
       (previous) => ({
         ...previous,
-        [sessionKey]: true,
+        [key]: !previous[key],
       })
     );
-  }, [timerSeconds]);
-
-  /* --------------------------------------------------
-     START TOPIC
-  -------------------------------------------------- */
-
-  const startTopic = (
-    subject,
-    topic
-  ) => {
-    /*
-      If another timer is running,
-      don't accidentally move the
-      current session to another topic.
-    */
-    if (isTimerRunning) {
-      return;
-    }
-
-    const key = `${subject.id}-${topic}`;
-
-    /*
-      If already completed, don't start it.
-    */
-    if (completedTopics[key]) {
-      return;
-    }
-
-    setSelectedTopic({
-      subjectId: subject.id,
-      subjectName:
-        subject.name,
-      difficulty:
-        subject.difficulty,
-      topic,
-    });
-
-    /*
-      Store the exact session topic.
-    */
-    activeSessionRef.current =
-      key;
-
-    /*
-      Always begin with a fresh
-      25-minute session.
-    */
-    setTimerSeconds(25 * 60);
-
-    setIsTimerRunning(true);
   };
 
-  /* --------------------------------------------------
-     PAUSE TIMER
-  -------------------------------------------------- */
-
-  const pauseTimer = () => {
-    setIsTimerRunning(false);
-  };
-
-  /* --------------------------------------------------
-     RESUME TIMER
-  -------------------------------------------------- */
-
-  const resumeTimer = () => {
-    if (
-      !selectedTopic ||
-      timerSeconds <= 0
-    ) {
-      return;
-    }
-
-    /*
-      If the session was paused,
-      preserve its topic.
-    */
-    if (!activeSessionRef.current) {
-      activeSessionRef.current =
-        `${selectedTopic.subjectId}-${selectedTopic.topic}`;
-    }
-
-    setIsTimerRunning(true);
-  };
-
-  /* --------------------------------------------------
-     RESET TIMER
-  -------------------------------------------------- */
-
-  const resetTimer = () => {
-    setIsTimerRunning(false);
-
-    /*
-      Cancels the current session.
-      No progress is added.
-    */
-    activeSessionRef.current = null;
-
-    setTimerSeconds(25 * 60);
-  };
-
-  /* --------------------------------------------------
-     MANUAL SESSION BUTTON
-  -------------------------------------------------- */
-
-  const completeSession = () => {
-    /*
-      This button is intentionally disabled
-      until the timer reaches 00:00.
-
-      The automatic completion effect handles
-      the actual session completion.
-    */
-    return;
-  };
-
-  /* --------------------------------------------------
-     SUBJECT FORM
-  -------------------------------------------------- */
-
-  const openAddSubject = () => {
+  const openAddForm = () => {
     setEditingSubjectId(null);
-
-    setSubjectForm(
-      getInitialForm()
-    );
-
-    setShowSubjectForm(true);
+    setForm(getInitialForm());
+    setShowForm(true);
   };
 
-  const openEditSubject = (
-    subject
-  ) => {
+  const openEditForm = (subject) => {
     setEditingSubjectId(
       subject.id
     );
 
-    setSubjectForm({
+    setForm({
       name: subject.name,
-      examDate:
-        subject.examDate,
-      difficulty:
-        subject.difficulty,
-      topics:
-        subject.topics.join("\n"),
+      examDate: subject.examDate,
+      difficulty: subject.difficulty,
+      topics: subject.topics.join(
+        ", "
+      ),
     });
 
-    setShowSubjectForm(true);
+    setShowForm(true);
   };
 
-  const cancelSubjectForm = () => {
-    setShowSubjectForm(false);
+  const closeForm = () => {
+    setShowForm(false);
     setEditingSubjectId(null);
-
-    setSubjectForm(
-      getInitialForm()
-    );
+    setForm(getInitialForm());
   };
 
-  const handleSubjectFormChange = (
-    event
-  ) => {
-    const {
-      name,
-      value,
-    } = event.target;
-
-    setSubjectForm(
-      (previous) => ({
-        ...previous,
-        [name]: value,
-      })
-    );
-  };
-
-  const saveSubject = (event) => {
+  const handleFormSubmit = (event) => {
     event.preventDefault();
 
-    const cleanName =
-      subjectForm.name.trim();
-
-    const cleanTopics =
-      subjectForm.topics
-        .split("\n")
-        .map((topic) =>
-          topic.trim()
-        )
-        .filter(Boolean);
+    const topicList = form.topics
+      .split(",")
+      .map((topic) => topic.trim())
+      .filter(Boolean);
 
     if (
-      !cleanName ||
-      !subjectForm.examDate ||
-      cleanTopics.length === 0
+      !form.name.trim() ||
+      !form.examDate ||
+      topicList.length === 0
     ) {
-      alert(
-        "Please enter subject name, exam date and at least one topic."
-      );
-
       return;
     }
 
     if (editingSubjectId) {
-      setSubjects(
-        (previous) =>
-          previous.map(
-            (subject) =>
-              subject.id ===
-              editingSubjectId
-                ? {
-                    ...subject,
-                    name: cleanName,
-                    examDate:
-                      subjectForm.examDate,
-                    difficulty:
-                      subjectForm.difficulty,
-                    topics:
-                      cleanTopics,
-                  }
-                : subject
-          )
+      setSubjects((previous) =>
+        previous.map((subject) =>
+          subject.id ===
+          editingSubjectId
+            ? {
+                ...subject,
+                name: form.name.trim(),
+                examDate:
+                  form.examDate,
+                difficulty:
+                  form.difficulty,
+                topics: topicList,
+              }
+            : subject
+        )
       );
     } else {
       const newSubject = {
         id: `subject-${Date.now()}`,
-        name: cleanName,
-        examDate:
-          subjectForm.examDate,
-        difficulty:
-          subjectForm.difficulty,
-        topics: cleanTopics,
+        name: form.name.trim(),
+        examDate: form.examDate,
+        difficulty: form.difficulty,
+        topics: topicList,
       };
 
-      setSubjects(
-        (previous) => [
-          ...previous,
-          newSubject,
-        ]
-      );
+      setSubjects((previous) => [
+        ...previous,
+        newSubject,
+      ]);
     }
 
-    cancelSubjectForm();
+    closeForm();
   };
 
-  /* --------------------------------------------------
-     DELETE SUBJECT
-  -------------------------------------------------- */
-
-  const deleteSubject = (
-    subjectId
-  ) => {
+  const deleteSubject = (subjectId) => {
     const subject =
       subjects.find(
         (item) =>
@@ -977,136 +893,86 @@ function App() {
       return;
     }
 
-    const confirmed =
-      window.confirm(
-        `Delete "${subject.name}" from your study plan?`
-      );
+    const shouldDelete = window.confirm(
+      `Delete ${subject.name}?`
+    );
 
-    if (!confirmed) {
+    if (!shouldDelete) {
       return;
     }
 
-    /*
-      Stop timer if the deleted subject
-      is currently active.
-    */
-    if (
-      selectedTopic?.subjectId ===
-      subjectId
-    ) {
-      activeSessionRef.current = null;
-
-      setSelectedTopic(null);
-      setIsTimerRunning(false);
-      setTimerSeconds(25 * 60);
-    }
-
-    setSubjects(
-      (previous) =>
-        previous.filter(
-          (item) =>
-            item.id !== subjectId
-        )
-    );
-
-    setCompletedTopics(
-      (previous) => {
-        const updated = {
-          ...previous,
-        };
-
-        Object.keys(updated).forEach(
-          (key) => {
-            if (
-              key.startsWith(
-                `${subjectId}-`
-              )
-            ) {
-              delete updated[key];
-            }
-          }
-        );
-
-        return updated;
-      }
+    setSubjects((previous) =>
+      previous.filter(
+        (item) =>
+          item.id !== subjectId
+      )
     );
 
     setSubjectStudiedSeconds(
       (previous) => {
-        const updated = {
+        const copy = {
           ...previous,
         };
 
-        delete updated[subjectId];
+        delete copy[subjectId];
 
-        return updated;
+        return copy;
       }
     );
-
-    if (
-      editingSubjectId ===
-      subjectId
-    ) {
-      cancelSubjectForm();
-    }
   };
 
-  /* --------------------------------------------------
-     RESET DEMO DATA
-  -------------------------------------------------- */
-
   const resetDemoData = () => {
-    const confirmed =
-      window.confirm(
-        "Reset the planner to the original demo data? Your current progress will be removed."
-      );
+    const shouldReset = window.confirm(
+      "Reset all Smart Study Planner data?"
+    );
 
-    if (!confirmed) {
+    if (!shouldReset) {
       return;
     }
 
-    activeSessionRef.current = null;
-
-    setSubjects(
-      DEFAULT_SUBJECTS
-    );
-
+    setSubjects(DEFAULT_SUBJECTS);
     setStudyHours(3);
     setCompletedTopics({});
     setCompletedSessions(0);
     setStudiedSeconds(0);
     setStudyDates([]);
     setSubjectStudiedSeconds({});
-
-    setSelectedTopic(null);
-    setIsTimerRunning(false);
     setTimerSeconds(25 * 60);
+    setIsTimerRunning(false);
+    setSelectedTopic(null);
 
-    cancelSubjectForm();
-  };
-
-  /* --------------------------------------------------
-     SUBJECT STUDY MINUTES
-  -------------------------------------------------- */
-
-  const getSubjectStudyMinutes = (
-    subjectId
-  ) => {
-    return Math.floor(
-      (subjectStudiedSeconds[
-        subjectId
-      ] || 0) / 60
+    Object.values(STORAGE_KEYS).forEach(
+      (key) =>
+        localStorage.removeItem(key)
     );
   };
 
-  /* --------------------------------------------------
-     RENDER
-  -------------------------------------------------- */
+  const getSubjectStudiedSeconds = (
+    subjectId
+  ) =>
+    subjectStudiedSeconds[
+      subjectId
+    ] || 0;
+
+  const getInsight = () => {
+    if (!highestPrioritySubject) {
+      return "Add a subject to generate an adaptive study plan.";
+    }
+
+    if (
+      highestPrioritySubject.daysRemaining <=
+      1
+    ) {
+      return `Start with ${recommendation?.topic || "your next topic"}. Your planner selected it because ${highestPrioritySubject.name} has a very near exam deadline and a high current priority.`;
+    }
+
+    return `Start with ${recommendation?.topic || "your next topic"}. Your planner selected it because ${highestPrioritySubject.name} currently has the highest adaptive priority score.`;
+  };
 
   return (
-    <div className="app">
+    <div className="app-shell">
       <header className="hero">
-        <div className="container">
+        <div className="hero-content">
           <p className="eyebrow">
             SMART STUDY PLANNER
           </p>
@@ -1120,220 +986,163 @@ function App() {
           </h1>
 
           <p className="hero-description">
-            An adaptive study planner
-            that decides what you should
-            study based on your exams,
-            difficulty, progress and study
-            history.
+            An adaptive study planner that
+            decides what you should study based
+            on your exams, difficulty, progress
+            and study history.
           </p>
         </div>
       </header>
 
       <main className="container">
-        {/* AVAILABLE HOURS */}
-
-        <section className="section">
-          <div className="section-heading">
+        <section className="study-time-card">
+          <div>
             <p className="section-label">
               TODAY'S AVAILABLE STUDY TIME
             </p>
 
             <h2>
-              Tell the planner how much
-              time you have today.
+              Tell the planner how much time
+              you have today.
             </h2>
 
             <p>
-              Your adaptive plan will use
-              this time.
+              Your adaptive plan will use this
+              time.
             </p>
           </div>
 
-          <div className="hours-card">
-            <div className="hours-control">
-              <input
-                type="range"
-                min="1"
-                max="12"
-                value={studyHours}
-                onChange={(event) =>
-                  setStudyHours(
+          <div className="hours-control">
+            <input
+              type="number"
+              min="1"
+              max="12"
+              value={studyHours}
+              onChange={(event) =>
+                setStudyHours(
+                  Math.max(
+                    1,
                     Number(
                       event.target.value
                     )
                   )
-                }
-              />
+                )
+              }
+            />
 
-              <div className="hours-number">
-                <strong>
-                  {studyHours}
-                </strong>
-
-                <span>hours</span>
-              </div>
-            </div>
-
-            <div className="stats-grid">
-              <div className="stat-card">
-                <span>⏰</span>
-                <strong>
-                  {studyHours}
-                </strong>
-                <p>
-                  Hours Available
-                </p>
-              </div>
-
-              <div className="stat-card">
-                <span>📚</span>
-                <strong>
-                  {subjects.length}
-                </strong>
-                <p>Subjects</p>
-              </div>
-
-              <div className="stat-card">
-                <span>📝</span>
-                <strong>
-                  {completedSessions}
-                </strong>
-                <p>
-                  Study Sessions
-                </p>
-              </div>
-
-              <div className="stat-card">
-                <span>🔥</span>
-                <strong>
-                  {currentStreak}
-                </strong>
-                <p>Day Streak</p>
-              </div>
-
-              <div className="stat-card">
-                <span>🎯</span>
-                <strong>
-                  {overallProgress}%
-                </strong>
-                <p>
-                  Topic Progress
-                </p>
-              </div>
-            </div>
+            <span>hours</span>
           </div>
         </section>
 
-        {/* DAILY GOAL */}
+        <section className="stats-grid">
+          <div className="stat-card">
+            <span>⏰</span>
+            <strong>{studyHours}</strong>
+            <small>Hours Available</small>
+          </div>
 
-        <section className="section">
-          <div className="daily-goal-card">
-            <div>
-              <p className="section-label">
-                🎯 DAILY GOAL
-              </p>
+          <div className="stat-card">
+            <span>📚</span>
+            <strong>{subjects.length}</strong>
+            <small>Subjects</small>
+          </div>
 
-              <h2>
-                {studiedMinutes} /{" "}
-                {dailyGoalMinutes}{" "}
-                minutes
-              </h2>
-            </div>
+          <div className="stat-card">
+            <span>📝</span>
+            <strong>
+              {completedSessions}
+            </strong>
+            <small>Study Sessions</small>
+          </div>
 
-            <div className="goal-progress">
-              <div className="progress-track">
-                <div
-                  className="progress-fill"
-                  style={{
-                    width: `${dailyGoalProgress}%`,
-                  }}
-                />
-              </div>
+          <div className="stat-card">
+            <span>🔥</span>
+            <strong>{currentStreak}</strong>
+            <small>Day Streak</small>
+          </div>
 
-              <strong>
-                {dailyGoalProgress}%
-              </strong>
-            </div>
+          <div className="stat-card">
+            <span>🎯</span>
+            <strong>{topicProgress}%</strong>
+            <small>Topic Progress</small>
           </div>
         </section>
 
-        {/* ANALYTICS */}
-
-        <section className="section">
+        <section className="daily-goal">
           <div className="section-heading">
+            <span>🎯 DAILY GOAL</span>
+            <strong>
+              {studiedMinutes} /{" "}
+              {dailyGoalMinutes} minutes
+            </strong>
+          </div>
+
+          <div className="progress-track">
+            <div
+              className="progress-fill"
+              style={{
+                width: `${dailyGoalProgress}%`,
+              }}
+            />
+          </div>
+
+          <strong>
+            {dailyGoalProgress}%
+          </strong>
+        </section>
+
+        <section className="section">
+          <div className="section-title">
             <p className="section-label">
               📊 STUDY ANALYTICS
             </p>
 
             <h2>
-              Understand your study
-              behavior and track your
-              progress.
+              Understand your study behavior
+              and track your progress.
             </h2>
           </div>
 
           <div className="analytics-grid">
-            <div className="analytics-card">
-              <span className="analytics-icon">
-                ⏱️
-              </span>
-
-              <h3>
-                Today's Study
-              </h3>
-
+            <article className="analytics-card">
+              <span>⏱️</span>
+              <h3>Today's Study</h3>
               <p>
-                Actual study time vs daily
-                goal
+                Actual study time vs daily goal
               </p>
 
               <strong>
-                {studiedMinutes} min
+                {formatStudyDuration(
+                  studiedSeconds
+                )}
               </strong>
 
-              <div className="mini-progress">
-                <div
-                  style={{
-                    width: `${dailyGoalProgress}%`,
-                  }}
-                />
-              </div>
-
               <small>
-                {studiedMinutes} min
-                studied{" "}
-                {dailyGoalMinutes} min
-                goal
+                {formatStudyDuration(
+                  studiedSeconds
+                )}{" "}
+                studied •{" "}
+                {dailyGoalMinutes} min goal
               </small>
-            </div>
+            </article>
 
-            <div className="analytics-card">
-              <span className="analytics-icon">
-                🔥
-              </span>
-
-              <h3>
-                Current Streak
-              </h3>
+            <article className="analytics-card">
+              <span>🔥</span>
+              <h3>Current Streak</h3>
 
               <strong>
                 {currentStreak} days
               </strong>
 
-              <p>
-                Keep studying every day to
-                build your streak.
-              </p>
-            </div>
+              <small>
+                Keep studying every day to build
+                your streak.
+              </small>
+            </article>
 
-            <div className="analytics-card analytics-wide">
-              <span className="analytics-icon">
-                📚
-              </span>
-
-              <h3>
-                Subject Study Time
-              </h3>
+            <article className="analytics-card">
+              <span>📚</span>
+              <h3>Subject Study Time</h3>
 
               <p>
                 See where your study time is
@@ -1341,155 +1150,108 @@ function App() {
               </p>
 
               <div className="subject-time-list">
-                {subjects.map(
-                  (subject) => (
-                    <div
-                      className="subject-time-item"
-                      key={subject.id}
-                    >
-                      <div>
-                        <strong>
-                          {subject.name}
-                        </strong>
+                {subjects.map((subject) => (
+                  <div
+                    className="subject-time-row"
+                    key={subject.id}
+                  >
+                    <span>
+                      {subject.name}
+                      <small>
+                        {subject.difficulty}
+                      </small>
+                    </span>
 
-                        <span>
-                          {
-                            subject.difficulty
-                          }
-                        </span>
-                      </div>
+                    <strong>
+                      {formatStudyDuration(
+                        getSubjectStudiedSeconds(
+                          subject.id
+                        )
+                      )}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="analytics-card">
+              <span>🎯</span>
+              <h3>Topic Completion</h3>
+
+              <p>
+                Track how much of each subject
+                you have completed.
+              </p>
+
+              {rankedSubjects.map(
+                (subject) => (
+                  <div
+                    className="mini-progress"
+                    key={subject.id}
+                  >
+                    <div className="mini-progress-header">
+                      <span>
+                        {subject.name}
+                      </span>
 
                       <strong>
-                        {getSubjectStudyMinutes(
-                          subject.id
-                        )}{" "}
-                        min
+                        {Math.round(
+                          subject.progress *
+                            100
+                        )}
+                        %
                       </strong>
                     </div>
-                  )
-                )}
-              </div>
-            </div>
 
-            <div className="analytics-card analytics-wide">
-              <span className="analytics-icon">
-                🎯
-              </span>
-
-              <h3>
-                Topic Completion
-              </h3>
-
-              <p>
-                Track how much of each
-                subject you have completed.
-              </p>
-
-              <div className="topic-analytics-list">
-                {subjects.map(
-                  (subject) => {
-                    const completed =
-                      subject.topics.filter(
-                        (topic) =>
-                          completedTopics[
-                            `${subject.id}-${topic}`
-                          ]
-                      ).length;
-
-                    const percentage =
-                      subject.topics
-                        .length > 0
-                        ? Math.round(
-                            (completed /
-                              subject
-                                .topics
-                                .length) *
-                              100
-                          )
-                        : 0;
-
-                    return (
+                    <div className="progress-track">
                       <div
-                        className="topic-analytics-item"
-                        key={subject.id}
-                      >
-                        <div>
-                          <strong>
-                            {
-                              subject.name
-                            }
-                          </strong>
+                        className="progress-fill"
+                        style={{
+                          width: `${
+                            subject.progress *
+                            100
+                          }%`,
+                        }}
+                      />
+                    </div>
 
-                          <span>
-                            {percentage}%
-                          </span>
-                        </div>
+                    <small>
+                      {subject.completed} of{" "}
+                      {subject.topics.length}{" "}
+                      topics completed
+                    </small>
+                  </div>
+                )
+              )}
+            </article>
 
-                        <small>
-                          {completed} of{" "}
-                          {
-                            subject.topics
-                              .length
-                          }{" "}
-                          topics completed
-                        </small>
-
-                        <div className="mini-progress">
-                          <div
-                            style={{
-                              width: `${percentage}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  }
-                )}
-              </div>
-            </div>
-
-            <div className="analytics-card">
-              <span className="analytics-icon">
-                📈
-              </span>
-
-              <h3>
-                Planned vs Actual
-              </h3>
+            <article className="analytics-card">
+              <span>📈</span>
+              <h3>Planned vs Actual</h3>
 
               <p>
-                Compare today's study
-                behavior.
+                Compare today's study behavior.
               </p>
 
-              <div className="planned-actual">
+              <div className="comparison-list">
                 <div>
-                  <span>
-                    Planned
-                  </span>
-
+                  <span>Planned</span>
                   <strong>
-                    {dailyGoalMinutes}{" "}
-                    min
+                    {dailyGoalMinutes} min
                   </strong>
                 </div>
 
                 <div>
-                  <span>
-                    Actual
-                  </span>
-
+                  <span>Actual</span>
                   <strong>
-                    {studiedMinutes}{" "}
-                    min
+                    {formatStudyDuration(
+                      studiedSeconds
+                    )}
                   </strong>
                 </div>
 
                 <div>
-                  <span>
-                    Difference
-                  </span>
-
+                  <span>Difference</span>
                   <strong>
                     {studiedMinutes -
                       dailyGoalMinutes}{" "}
@@ -1497,633 +1259,498 @@ function App() {
                   </strong>
                 </div>
               </div>
-            </div>
+            </article>
 
-            <div className="analytics-card">
-              <span className="analytics-icon">
-                💡
-              </span>
+            <article className="analytics-card insight-card">
+              <span>💡</span>
+              <h3>Smart Insight</h3>
 
-              <h3>
-                Smart Insight
-              </h3>
-
-              {recommendation ? (
-                <p>
-                  Start with{" "}
-                  <strong>
-                    {
-                      recommendation.topic
-                    }
-                  </strong>
-                  . Your planner selected
-                  it because{" "}
-                  <strong>
-                    {
-                      recommendation
-                        .subject.name
-                    }
-                  </strong>{" "}
-                  has a high current
-                  priority.
-                </p>
-              ) : (
-                <p>
-                  🎉 All topics are
-                  completed. Great work!
-                </p>
-              )}
-            </div>
+              <p>{getInsight()}</p>
+            </article>
           </div>
         </section>
 
-        {/* SUBJECTS */}
-
         <section className="section">
-          <div className="section-heading-row">
+          <div className="section-title-row">
             <div>
               <p className="section-label">
                 📚 MY SUBJECTS
               </p>
 
               <h2>
-                Subjects currently in
-                your study plan.
+                Subjects currently in your
+                study plan.
               </h2>
             </div>
 
             <button
               className="primary-button"
-              onClick={
-                openAddSubject
-              }
+              onClick={openAddForm}
             >
               + Add Subject
             </button>
           </div>
 
-          {showSubjectForm && (
+          {showForm && (
             <form
               className="subject-form"
-              onSubmit={saveSubject}
+              onSubmit={handleFormSubmit}
             >
-              <div className="subject-form-header">
-                <h3>
-                  {editingSubjectId
-                    ? "Edit Subject"
-                    : "Add New Subject"}
-                </h3>
+              <h3>
+                {editingSubjectId
+                  ? "Edit Subject"
+                  : "Add Subject"}
+              </h3>
 
-                <p>
-                  Add the exam date,
-                  difficulty and topics.
-                </p>
-              </div>
+              <input
+                placeholder="Subject name"
+                value={form.name}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    name: event.target.value,
+                  })
+                }
+              />
 
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>
-                    Subject Name
-                  </label>
+              <input
+                type="date"
+                value={form.examDate}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    examDate:
+                      event.target.value,
+                  })
+                }
+              />
 
-                  <input
-                    name="name"
-                    value={
-                      subjectForm.name
-                    }
-                    onChange={
-                      handleSubjectFormChange
-                    }
-                    placeholder="e.g. Operating Systems"
-                  />
-                </div>
+              <select
+                value={form.difficulty}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    difficulty:
+                      event.target.value,
+                  })
+                }
+              >
+                <option>Easy</option>
+                <option>Medium</option>
+                <option>Hard</option>
+              </select>
 
-                <div className="form-group">
-                  <label>
-                    Exam Date
-                  </label>
-
-                  <input
-                    type="date"
-                    name="examDate"
-                    value={
-                      subjectForm.examDate
-                    }
-                    onChange={
-                      handleSubjectFormChange
-                    }
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    Difficulty
-                  </label>
-
-                  <select
-                    name="difficulty"
-                    value={
-                      subjectForm.difficulty
-                    }
-                    onChange={
-                      handleSubjectFormChange
-                    }
-                  >
-                    <option>
-                      Easy
-                    </option>
-
-                    <option>
-                      Medium
-                    </option>
-
-                    <option>
-                      Hard
-                    </option>
-                  </select>
-                </div>
-
-                <div className="form-group form-group-full">
-                  <label>
-                    Topics
-                  </label>
-
-                  <textarea
-                    name="topics"
-                    value={
-                      subjectForm.topics
-                    }
-                    onChange={
-                      handleSubjectFormChange
-                    }
-                    placeholder="Enter one topic per line"
-                  />
-
-                  <small>
-                    Example: Arrays,
-                    Linked Lists, Trees
-                    (one per line)
-                  </small>
-                </div>
-              </div>
+              <textarea
+                placeholder="Topics separated by commas"
+                value={form.topics}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    topics:
+                      event.target.value,
+                  })
+                }
+              />
 
               <div className="form-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={
-                    cancelSubjectForm
-                  }
-                >
-                  Cancel
-                </button>
-
                 <button
                   type="submit"
                   className="primary-button"
                 >
-                  {editingSubjectId
-                    ? "Save Changes"
-                    : "Add Subject"}
+                  Save Subject
+                </button>
+
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={closeForm}
+                >
+                  Cancel
                 </button>
               </div>
             </form>
           )}
 
           <div className="subject-grid">
-            {subjects.map(
-              (subject) => {
-                const completed =
-                  subject.topics.filter(
-                    (topic) =>
-                      completedTopics[
-                        `${subject.id}-${topic}`
-                      ]
-                  ).length;
+            {subjects.map((subject) => {
+              const rankedSubject =
+                rankedSubjects.find(
+                  (item) =>
+                    item.id === subject.id
+                );
 
-                const percentage =
-                  subject.topics
-                    .length > 0
-                    ? Math.round(
-                        (completed /
-                          subject.topics
-                            .length) *
-                          100
-                      )
-                    : 0;
+              return (
+                <article
+                  className="subject-card"
+                  key={subject.id}
+                >
+                  <div className="subject-card-top">
+                    <div>
+                      <h3>
+                        {subject.name}
+                      </h3>
 
-                return (
-                  <div
-                    className="subject-card"
-                    key={subject.id}
-                  >
-                    <div className="subject-card-top">
-                      <div>
-                        <h3>
-                          {
-                            subject.name
-                          }
-                        </h3>
-
-                        <p>
-                          Exam{" "}
-                          {
-                            subject.examDate
-                          }{" "}
-                          •{" "}
-                          {
-                            subject.topics
-                              .length
-                          }{" "}
-                          topics
-                        </p>
-                      </div>
-
-                      <div className="subject-actions">
-                        <button
-                          className="icon-button edit-button"
-                          onClick={() =>
-                            openEditSubject(
-                              subject
-                            )
-                          }
-                          title="Edit subject"
-                        >
-                          ✏️
-                        </button>
-
-                        <button
-                          className="icon-button delete-button"
-                          onClick={() =>
-                            deleteSubject(
-                              subject.id
-                            )
-                          }
-                          title="Delete subject"
-                        >
-                          🗑️
-                        </button>
-                      </div>
+                      <p>
+                        Exam{" "}
+                        {subject.examDate} •{" "}
+                        {subject.topics.length}{" "}
+                        topics
+                      </p>
                     </div>
 
-                    <span
-                      className={`difficulty-badge ${subject.difficulty.toLowerCase()}`}
-                    >
-                      {
-                        subject.difficulty
-                      }
-                    </span>
-
-                    <div className="subject-progress">
-                      <p>
-                        <span>
-                          {completed} /{" "}
-                          {
+                    <div className="subject-actions">
+                      <button
+                        onClick={() =>
+                          openEditForm(
                             subject
-                              .topics
-                              .length
-                          }{" "}
-                          topics
-                        </span>
+                          )
+                        }
+                        title="Edit subject"
+                      >
+                        ✏️
+                      </button>
 
-                        <strong>
-                          {percentage}%
-                        </strong>
-                      </p>
-
-                      <div className="progress-track">
-                        <div
-                          className="progress-fill"
-                          style={{
-                            width: `${percentage}%`,
-                          }}
-                        />
-                      </div>
+                      <button
+                        onClick={() =>
+                          deleteSubject(
+                            subject.id
+                          )
+                        }
+                        title="Delete subject"
+                      >
+                        🗑️
+                      </button>
                     </div>
                   </div>
-                );
-              }
-            )}
+
+                  <span
+                    className={`difficulty ${String(subject.difficulty).toLowerCase()}`}
+                  >
+                    {subject.difficulty}
+                  </span>
+
+                  <div className="subject-progress">
+                    <div>
+                      <strong>
+                        {
+                          rankedSubject?.completed
+                        }{" "}
+                        /{" "}
+                        {
+                          subject.topics.length
+                        }{" "}
+                        topics
+                      </strong>
+
+                      <strong>
+                        {Math.round(
+                          (rankedSubject?.progress ||
+                            0) * 100
+                        )}
+                        %
+                      </strong>
+                    </div>
+
+                    <div className="progress-track">
+                      <div
+                        className="progress-fill"
+                        style={{
+                          width: `${
+                            (rankedSubject?.progress ||
+                              0) * 100
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
 
-        {/* RECOMMENDATION */}
-
-        <section className="section">
-          <div className="section-heading">
+        {recommendation && (
+          <section className="recommendation-section">
             <p className="section-label">
               WHAT SHOULD I STUDY NOW?
             </p>
-          </div>
 
-          {recommendation ? (
             <div className="recommendation-card">
-              <div className="recommendation-icon">
-                🎯
+              <div className="recommendation-main">
+                <span className="recommendation-icon">
+                  🎯
+                </span>
+
+                <div>
+                  <span className="badge">
+                    ADAPTIVE RECOMMENDATION
+                  </span>
+
+                  <h2>
+                    Study{" "}
+                    {recommendation.topic}{" "}
+                    now
+                  </h2>
+
+                  <h3>
+                    {recommendation.subject.name}
+                  </h3>
+
+                  <div className="why-topic">
+                    <h4>
+                      🧠 Why this topic?
+                    </h4>
+
+                    <p>
+                      <strong>
+                        {
+                          recommendation.subject
+                            .name
+                        }
+                      </strong>{" "}
+                      has an exam in{" "}
+                      <strong>
+                        {
+                          recommendation.subject
+                            .daysRemaining
+                        }
+                      </strong>{" "}
+                      day
+                      {recommendation.subject
+                        .daysRemaining !== 1
+                        ? "s"
+                        : ""}
+                      , it is a{" "}
+                      <strong>
+                        {
+                          recommendation.subject
+                            .difficulty
+                        }
+                      </strong>{" "}
+                      subject, and you still
+                      have{" "}
+                      <strong>
+                        {
+                          recommendation.subject
+                            .remainingTopics
+                        }
+                      </strong>{" "}
+                      topics remaining.
+                    </p>
+
+                    <p>
+                      The planner selected{" "}
+                      <strong>
+                        {recommendation.topic}
+                      </strong>{" "}
+                      because it is incomplete
+                      and the subject currently
+                      has a high study priority.
+                    </p>
+                  </div>
+
+                  <div className="recommendation-facts">
+                    <span>
+                      📅{" "}
+                      {
+                        recommendation.subject
+                          .daysRemaining
+                      }{" "}
+                      day
+                      {recommendation.subject
+                        .daysRemaining !== 1
+                        ? "s"
+                        : ""}{" "}
+                      until exam
+                    </span>
+
+                    <span>
+                      📚{" "}
+                      {
+                        recommendation.subject
+                          .remainingTopics
+                      }{" "}
+                      topics remaining
+                    </span>
+
+                    <span>
+                      🎯{" "}
+                      {
+                        recommendation.subject
+                          .difficulty
+                      }{" "}
+                      difficulty
+                    </span>
+
+                    <span>
+                      ⏱️{" "}
+                      {
+                        recommendation
+                          .recommendedMinutes
+                      }{" "}
+                      recommended minutes
+                    </span>
+                  </div>
+
+                  <button
+                    className="primary-button"
+                    onClick={() =>
+                      startTopic(
+                        recommendation.subject,
+                        recommendation.topic,
+                        recommendation.recommendedMinutes
+                      )
+                    }
+                  >
+                    ▶ Start{" "}
+                    {recommendation.topic}
+                  </button>
+                </div>
               </div>
 
-              <div className="recommendation-content">
-                <p className="section-label">
-                  ADAPTIVE RECOMMENDATION
-                </p>
+              <div className="score-panel">
+                <span>PRIORITY SCORE</span>
 
-                <h2>
-                  Study{" "}
+                <strong>
                   {
-                    recommendation.topic
-                  }{" "}
-                  now
-                </h2>
+                    recommendation.subject
+                      .score
+                  }
+                  <small>/100</small>
+                </strong>
 
-                <h3>
+                <p>
                   {
-                    recommendation
-                      .subject.name
-                  }
-                </h3>
-
-                <div className="why-box">
-                  <h4>
-                    🧠 Why this topic?
-                  </h4>
-
-                  <p>
-                    <strong>
-                      {
-                        recommendation
-                          .subject.name
-                      }
-                    </strong>{" "}
-                    has an exam in{" "}
-                    <strong>
-                      {
-                        recommendation
-                          .subject
-                          .daysRemaining
-                      }
-                    </strong>{" "}
-                    day
-                    {recommendation
-                      .subject
-                      .daysRemaining !==
-                    1
-                      ? "s"
-                      : ""}
-                    , it is a{" "}
-                    <strong>
-                      {
-                        recommendation
-                          .subject
-                          .difficulty
-                      }
-                    </strong>{" "}
-                    subject, and you still
-                    have{" "}
-                    <strong>
-                      {
-                        recommendation
-                          .subject
-                          .remainingTopics
-                      }
-                    </strong>{" "}
-                    topics remaining.
-                  </p>
-
-                  <p>
-                    The planner selected{" "}
-                    <strong>
-                      {
-                        recommendation.topic
-                      }
-                    </strong>{" "}
-                    because it is incomplete
-                    and the subject currently
-                    has a high study priority.
-                  </p>
-                </div>
-
-                <div className="recommendation-details">
-                  <span>
-                    📅{" "}
-                    {
-                      recommendation
-                        .subject
-                        .daysRemaining
-                    }{" "}
-                    day
-                    {recommendation
-                      .subject
-                      .daysRemaining !==
-                    1
-                      ? "s"
-                      : ""}{" "}
-                    until exam
-                  </span>
-
-                  <span>
-                    📚{" "}
-                    {
-                      recommendation
-                        .subject
-                        .remainingTopics
-                    }{" "}
-                    topics remaining
-                  </span>
-
-                  <span>
-                    🎯{" "}
-                    {
-                      recommendation
-                        .subject
-                        .difficulty
-                    }{" "}
-                    difficulty
-                  </span>
-
-                  <span>
-                    ⏱️ 25 recommended
-                    minutes
-                  </span>
-                </div>
-
-                <button
-                  className="primary-button"
-                  disabled={
-                    isTimerRunning
-                  }
-                  onClick={() =>
-                    startTopic(
-                      recommendation.subject,
-                      recommendation.topic
+                    getScoreLabel(
+                      recommendation.subject
+                        .score
                     )
                   }
-                >
-                  ▶ Start{" "}
-                  {
-                    recommendation.topic
-                  }
-                </button>
+                </p>
               </div>
             </div>
-          ) : (
-            <div className="empty-state">
-              🎉 All topics completed!
-            </div>
-          )}
-        </section>
-
-        {/* RECOVERY PLAN */}
+          </section>
+        )}
 
         <section className="section">
-          <div className="recovery-card">
-            <div className="section-heading">
-              <p className="section-label">
-                🔄 ADAPTIVE RECOVERY
-              </p>
+          <p className="section-label">
+            🔄 ADAPTIVE RECOVERY
+          </p>
 
-              <h2>
-                The planner adjusts your
-                remaining study time based
-                on how much you have actually
-                studied today.
-              </h2>
-            </div>
+          <h2>
+            The planner adjusts your remaining
+            study time based on how much you
+            have actually studied today.
+          </h2>
 
-            <div className="recovery-summary">
-              <div>
-                <span>⏱️</span>
-
-                <strong>
-                  {remainingMinutes}{" "}
-                  min left
-                </strong>
-              </div>
-
-              <div>
-                <span>Planned</span>
-
-                <strong>
-                  {dailyGoalMinutes}{" "}
-                  min
-                </strong>
-              </div>
-
-              <div>
-                <span>Studied</span>
-
-                <strong>
-                  {studiedMinutes}{" "}
-                  min
-                </strong>
-              </div>
-
-              <div>
-                <span>Remaining</span>
-
-                <strong>
-                  {remainingMinutes}{" "}
-                  min
-                </strong>
-              </div>
-            </div>
-
-            <div className="recovery-list">
-              {recoveryPlan.length > 0 ? (
-                recoveryPlan.map(
-                  (item, index) => (
-                    <div
-                      className="recovery-item"
-                      key={`${item.subject.id}-${item.topic}`}
-                    >
-                      <strong>
-                        {index + 1}
-                      </strong>
-
-                      <div>
-                        <h3>
-                          {item.topic}
-                        </h3>
-
-                        <p>
-                          {
-                            item.subject
-                              .name
-                          }{" "}
-                          •{" "}
-                          {
-                            item.subject
-                              .difficulty
-                          }
-                        </p>
-                      </div>
-
-                      <span>
-                        {item.minutes} min
-                      </span>
-
-                      <button
-                        className="primary-button"
-                        disabled={
-                          isTimerRunning
-                        }
-                        onClick={() =>
-                          startTopic(
-                            item.subject,
-                            item.topic
-                          )
-                        }
-                      >
-                        Start
-                      </button>
-                    </div>
-                  )
-                )
-              ) : (
-                <div className="empty-state">
-                  🎉 No recovery plan
-                  needed. You have completed
-                  today's goal or all topics.
-                </div>
-              )}
-            </div>
-
-            <div className="smart-adjustment">
-              💡{" "}
+          <div className="recovery-summary">
+            <div>
+              <span>⏱️</span>
               <strong>
-                Smart adjustment:
-              </strong>{" "}
-              Your remaining study time has
-              been redistributed toward
-              subjects with higher exam
-              urgency, difficulty and
-              unfinished topics.
+                {remainingMinutes} min left
+              </strong>
             </div>
+
+            <div>
+              <span>Planned</span>
+              <strong>
+                {dailyGoalMinutes} min
+              </strong>
+            </div>
+
+            <div>
+              <span>Studied</span>
+              <strong>
+                {formatStudyDuration(
+                  studiedSeconds
+                )}
+              </strong>
+            </div>
+
+            <div>
+              <span>Remaining</span>
+              <strong>
+                {remainingMinutes} min
+              </strong>
+            </div>
+          </div>
+
+          <div className="recovery-list">
+            {recoveryPlan.map(
+              (item, index) => (
+                <article
+                  className="recovery-card"
+                  key={item.subject.id}
+                >
+                  <div className="rank-number">
+                    {index + 1}
+                  </div>
+
+                  <div>
+                    <h3>
+                      {item.topic}
+                    </h3>
+
+                    <p>
+                      {item.subject.name} �{" "}
+                      {item.subject.difficulty >= 0.85
+                        ? "Hard"
+                        : item.subject.difficulty >= 0.5
+                        ? "Medium"
+                        : "Easy"}
+                    </p>
+
+                    <strong>
+                      {item.minutes} min
+                    </strong>
+                  </div>
+
+                  <button
+                    className="secondary-button"
+                    onClick={() =>
+                      startTopic(
+                        item.subject,
+                        item.topic,
+                        item.minutes
+                      )
+                    }
+                  >
+                    Start
+                  </button>
+                </article>
+              )
+            )}
+          </div>
+
+          <div className="smart-adjustment">
+            💡{" "}
+            <strong>
+              Smart adjustment:
+            </strong>{" "}
+            Your remaining study time has been
+            redistributed toward subjects with
+            higher exam urgency, difficulty and
+            unfinished topics.
           </div>
         </section>
 
-        {/* SMART PLANNER */}
-
         <section className="section">
-          <div className="section-heading">
-            <p className="section-label">
-              🧠 SMART PLANNER
-            </p>
+          <p className="section-label">
+            🧠 SMART PLANNER
+          </p>
 
-            <h2>
-              Priority ranking
-            </h2>
+          <h2>Priority ranking</h2>
 
-            <p>
-              Subjects are ranked using
-              urgency, difficulty, remaining
-              topics and study progress.
-            </p>
-          </div>
+          <p>
+            Subjects are ranked using urgency,
+            difficulty, remaining topics and
+            study progress.
+          </p>
 
           <div className="ranking-list">
             {rankedSubjects.map(
               (subject, index) => (
-                <div
+                <article
                   className="ranking-card"
                   key={subject.id}
                 >
@@ -2132,158 +1759,238 @@ function App() {
                   </div>
 
                   <div className="ranking-content">
-                    <h3>
-                      {subject.name}
-                    </h3>
+                    <div className="ranking-header">
+                      <div>
+                        <h3>
+                          {subject.name}
+                        </h3>
 
-                    <p>
-                      Exam in{" "}
-                      {
-                        subject.daysRemaining
-                      }{" "}
-                      day
-                      {subject.daysRemaining !==
+                        <p>
+                          Exam in{" "}
+                          {
+                            subject.daysRemaining
+                          }{" "}
+                          day
+                          {subject.daysRemaining !==
+                          1
+                            ? "s"
+                            : ""}{" "}
+                          �{" "}
+                          {subject.difficulty >= 0.85
+                            ? "Hard"
+                            : subject.difficulty >= 0.5
+                            ? "Medium"
+                            : "Easy"} �{" "}
+                          {
+                            subject.remainingTopics
+                          }{" "}
+                          topics remaining
+                        </p>
+                      </div>
+
+                      <div className="ranking-score">
+                        <strong>
+                          {subject.score}
+                        </strong>
+                        <span>/100</span>
+                      </div>
+                    </div>
+
+                    <div className="score-bar">
+                      <div
+                        style={{
+                          width: `${subject.score}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="score-breakdown">
+                      <div>
+                        <span>
+                          📅 Exam urgency
+                        </span>
+                        <strong>
+                          +
+                          {Math.round(
+                            subject.urgencyPoints
+                          )}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>
+                          🎯 Difficulty
+                        </span>
+                        <strong>
+                          +
+                          {Math.round(
+                            subject.difficultyPoints
+                          )}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>
+                          📚 Remaining topics
+                        </span>
+                        <strong>
+                          +
+                          {Math.round(
+                            subject.remainingTopicPoints
+                          )}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>
+                          📈 Progress factor
+                        </span>
+                        <strong>
+                          +
+                          {Math.round(
+                            subject.progressPoints
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <p className="ranking-explanation">
+                      <strong>
+                        Why this score?
+                      </strong>{" "}
+                      {subject.daysRemaining <=
                       1
-                        ? "s"
-                        : ""}{" "}
-                      •{" "}
-                      {
-                        subject.difficulty
-                      }{" "}
-                      •{" "}
-                      {
-                        subject.remainingTopics
-                      }{" "}
-                      topics remaining
+                        ? "The exam is extremely close. "
+                        : subject.daysRemaining <=
+                          3
+                        ? "The exam is approaching quickly. "
+                        : ""}
+                      The subject is{" "}
+                      {String(subject.difficulty).toLowerCase()}
+                      , has{" "}
+                      {subject.remainingTopics}{" "}
+                      unfinished topics and is{" "}
+                      {Math.round(
+                        subject.progress * 100
+                      )}
+                      % complete.
                     </p>
                   </div>
-
-                  <strong className="priority-score">
-                    {subject.priority}
-                  </strong>
-                </div>
+                </article>
               )
             )}
           </div>
         </section>
 
-        {/* TOPIC PROGRESS */}
-
         <section className="section">
-          <div className="section-heading">
-            <p className="section-label">
-              📖 TOPIC PROGRESS
-            </p>
+          <p className="section-label">
+            📖 TOPIC PROGRESS
+          </p>
 
-            <h2>
-              Mark topics as you complete
-              them.
-            </h2>
-          </div>
+          <h2>
+            Mark topics as you complete them.
+          </h2>
 
-          <div className="topic-progress-grid">
-            {subjects.map(
-              (subject) => {
-                const completed =
-                  subject.topics.filter(
-                    (topic) =>
-                      completedTopics[
-                        `${subject.id}-${topic}`
-                      ]
-                  ).length;
+          <div className="topic-subject-list">
+            {subjects.map((subject) => {
+              const completed =
+                subject.topics.filter(
+                  (topic) =>
+                    completedTopics[
+                      `${subject.id}-${topic}`
+                    ]
+                ).length;
 
-                const percentage =
-                  subject.topics
-                    .length > 0
-                    ? Math.round(
-                        (completed /
-                          subject.topics
-                            .length) *
-                          100
-                      )
-                    : 0;
+              const progress =
+                subject.topics.length === 0
+                  ? 0
+                  : Math.round(
+                      (completed /
+                        subject.topics.length) *
+                        100
+                    );
 
-                return (
-                  <div
-                    className="topic-card"
-                    key={subject.id}
-                  >
-                    <div className="topic-card-heading">
+              return (
+                <article
+                  className="topic-card"
+                  key={subject.id}
+                >
+                  <div className="topic-header">
+                    <div>
                       <h3>
                         {subject.name}
                       </h3>
 
-                      <span>
-                        {percentage}%
-                      </span>
+                      <p>
+                        {progress}% •{" "}
+                        {completed} of{" "}
+                        {subject.topics.length}{" "}
+                        topics completed
+                      </p>
                     </div>
 
-                    <p>
-                      {completed} of{" "}
-                      {
-                        subject.topics
-                          .length
-                      }{" "}
-                      topics completed
-                    </p>
-
-                    <div className="topic-list">
-                      {subject.topics.map(
-                        (topic) => {
-                          const key = `${subject.id}-${topic}`;
-
-                          const completed =
-                            Boolean(
-                              completedTopics[
-                                key
-                              ]
-                            );
-
-                          return (
-                            <button
-                              key={topic}
-                              className={`topic-chip ${
-                                completed
-                                  ? "completed"
-                                  : ""
-                              }`}
-                              onClick={() =>
-                                setCompletedTopics(
-                                  (previous) => ({
-                                    ...previous,
-                                    [key]:
-                                      !previous[
-                                        key
-                                      ],
-                                  })
-                                )
-                              }
-                            >
-                              {completed
-                                ? "✅"
-                                : "⬜"}
-                              {topic}
-                            </button>
-                          );
-                        }
-                      )}
-                    </div>
+                    <strong>
+                      {progress}%
+                    </strong>
                   </div>
-                );
-              }
-            )}
+
+                  <div className="progress-track">
+                    <div
+                      className="progress-fill"
+                      style={{
+                        width: `${progress}%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="topic-list">
+                    {subject.topics.map(
+                      (topic) => {
+                        const key = `${subject.id}-${topic}`;
+                        const isComplete =
+                          Boolean(
+                            completedTopics[
+                              key
+                            ]
+                          );
+
+                        return (
+                          <button
+                            key={topic}
+                            className={`topic-chip ${
+                              isComplete
+                                ? "completed"
+                                : ""
+                            }`}
+                            onClick={() =>
+                              toggleTopic(
+                                subject.id,
+                                topic
+                              )
+                            }
+                          >
+                            {isComplete
+                              ? "✅"
+                              : "⬜"}
+                            {topic}
+                          </button>
+                        );
+                      }
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
 
-        {/* TIMER */}
+        <section className="timer-section">
+          <p className="section-label">
+            ⏱️ FOCUS TIMER
+          </p>
 
-        <section className="section">
           <div className="timer-card">
-            <div className="section-heading">
-              <p className="section-label">
-                ⏱️ FOCUS TIMER
-              </p>
-
+            <div>
               <h2>
                 📚 Study Session
               </h2>
@@ -2296,198 +2003,178 @@ function App() {
             </div>
 
             <div className="timer-display">
-              {formatTime(
-                timerSeconds
-              )}
+              {formatTime(timerSeconds)}
             </div>
 
-            <div className="timer-controls">
-              {!isTimerRunning &&
-              timerSeconds > 0 ? (
-                <button
-                  className="primary-button"
-                  onClick={() => {
-                    if (!selectedTopic) {
-                      if (
-                        recommendation
-                      ) {
-                        startTopic(
-                          recommendation.subject,
-                          recommendation.topic
-                        );
-                      }
+           ```jsx
+<div className="timer-actions">
+  {!isTimerRunning ? (
+    <button
+      className="primary-button"
+      onClick={() => {
+        if (timerSessionStarted.current) {
+          resumeTimer();
+          return;
+        }
 
-                      return;
-                    }
+        if (recommendation) {
+          startTopic(
+            recommendation.subject,
+            recommendation.topic,
+            recommendation.recommendedMinutes
+          );
+        }
+      }}
+    >
+      ▶{" "}
+      {timerSessionStarted.current
+        ? "Resume"
+        : "Start"}
+    </button>
+  ) : (
+    <button
+      className="secondary-button"
+      onClick={pauseTimer}
+    >
+      ⏸ Pause
+    </button>
+  )}
 
-                    resumeTimer();
-                  }}
-                >
-                  ▶ Start
-                </button>
-              ) : isTimerRunning ? (
-                <button
-                  className="primary-button"
-                  onClick={
-                    pauseTimer
-                  }
-                >
-                  ⏸ Pause
-                </button>
-              ) : (
-                <button
-                  className="primary-button"
-                  disabled
-                >
-                  ✓ Session Complete
-                </button>
-              )}
+  <button
+    className="secondary-button"
+    onClick={resetTimer}
+  >
+    ↻ Reset
+  </button>
+</div>
+```
+
+
+            <p className="timer-note">
+              ✓ Session completes automatically
+              at 00:00
+            </p>
+          </div>
+        </section>
+
+        <section className="section">
+          <p className="section-label">
+            📋 TODAY'S STUDY TASKS
+          </p>
+
+          <h2>
+            Recommended focus sessions
+          </h2>
+
+          {recommendation ? (
+            <div className="task-card">
+              <span>🎯</span>
+
+              <div>
+                <h3>
+                  {recommendation.topic}
+                </h3>
+
+                <p>
+                  {recommendation.subject.name} •{" "}
+                  {
+                    recommendation
+                      .recommendedMinutes
+                  }{" "}
+                  minutes
+                </p>
+              </div>
 
               <button
                 className="secondary-button"
-                onClick={
-                  resetTimer
+                onClick={() =>
+                  startTopic(
+                    recommendation.subject,
+                    recommendation.topic,
+                    recommendation.recommendedMinutes
+                  )
                 }
               >
-                ↻ Reset
+                Start
               </button>
             </div>
-
-            <button
-              className="session-complete-button"
-              onClick={
-                completeSession
-              }
-              disabled
-            >
-              ✓ Session completes
-              automatically at 00:00
-            </button>
-          </div>
+          ) : (
+            <p>
+              🎉 All current topics are
+              complete!
+            </p>
+          )}
         </section>
 
-        {/* TODAY'S TASKS */}
-
         <section className="section">
-          <div className="section-heading">
-            <p className="section-label">
-              📋 TODAY'S STUDY TASKS
-            </p>
+          <p className="section-label">
+            📅 UPCOMING EXAMS
+          </p>
 
-            <h2>
-              Recommended focus sessions
-            </h2>
-          </div>
+          <h2>
+            Keep your deadlines visible.
+          </h2>
 
-          <div className="task-list">
-            {recommendation ? (
-              <div className="task-item">
-                <span>🎯</span>
-
-                <div className="planner-content">
+          <div className="exam-grid">
+            {rankedSubjects
+              .slice()
+              .sort(
+                (a, b) =>
+                  a.daysRemaining -
+                  b.daysRemaining
+              )
+              .map((subject) => (
+                <article
+                  className="exam-card"
+                  key={subject.id}
+                >
                   <h3>
-                    {
-                      recommendation.topic
-                    }
+                    {subject.name}
                   </h3>
 
                   <p>
-                    {
-                      recommendation
-                        .subject.name
-                    }{" "}
-                    • 25 minutes
+                    Exam:{" "}
+                    {subject.examDate}
                   </p>
-                </div>
-
-                <button
-                  className="primary-button"
-                  disabled={
-                    isTimerRunning
-                  }
-                  onClick={() =>
-                    startTopic(
-                      recommendation.subject,
-                      recommendation.topic
-                    )
-                  }
-                >
-                  Start
-                </button>
-              </div>
-            ) : (
-              <div className="empty-state">
-                🎉 All recommended tasks
-                are completed.
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* EXAMS */}
-
-        <section className="section">
-          <div className="section-heading">
-            <p className="section-label">
-              📅 UPCOMING EXAMS
-            </p>
-
-            <h2>
-              Keep your deadlines visible.
-            </h2>
-          </div>
-
-          <div className="exam-list">
-            {rankedSubjects.map(
-              (subject) => (
-                <div
-                  className="exam-item"
-                  key={subject.id}
-                >
-                  <div>
-                    <h3>
-                      {subject.name}
-                    </h3>
-
-                    <p>
-                      Exam:{" "}
-                      {
-                        subject.examDate
-                      }
-                    </p>
-                  </div>
 
                   <strong>
-                    {
-                      subject.daysRemaining
-                    }{" "}
+                    {subject.daysRemaining}{" "}
                     day
                     {subject.daysRemaining !==
                     1
                       ? "s"
                       : ""}
                   </strong>
-                </div>
-              )
-            )}
+                </article>
+              ))}
           </div>
         </section>
 
-        {/* RESET */}
-
         <section className="reset-section">
           <button
-            className="reset-button"
-            onClick={
-              resetDemoData
-            }
+            className="danger-button"
+            onClick={resetDemoData}
           >
             🧹 Reset Demo Data
           </button>
         </section>
       </main>
+
+      <footer>
+        <p>
+          Smart Study Planner • Adaptive
+          planning using exam urgency,
+          difficulty, progress and study
+          history.
+        </p>
+      </footer>
     </div>
   );
 }
 
 export default App;
+
+
+
+
+
